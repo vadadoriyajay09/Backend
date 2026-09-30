@@ -12,6 +12,7 @@ const hpp = require("hpp");
 const errorMiddleware = require("./errors/error");
 
 const app = express();
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 
 // ==================== 🛡 SECURITY MIDDLEWARE ====================
