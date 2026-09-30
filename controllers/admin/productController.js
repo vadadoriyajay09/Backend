@@ -440,12 +440,25 @@ module.exports.deleteProduct = async (req, res, next) => {
       return next(new ErrorHandler("Product not found.", StatusCodes.NOT_FOUND));
     }
 
-    if (product.images && product.images.length > 0) {
-      const keys = product.images
-        .map((img) => img?.name)
-        .filter((url) => typeof url === "string");
+    const allMediaToDelete = [];
+    if (product.main_image) allMediaToDelete.push(product.main_image);
 
-      await deleteFileFromS3(keys);
+    if (Array.isArray(product.images) && product.images.length > 0) {
+      product.images.forEach((img) => {
+        const url = typeof img === "string" ? img : img?.url || img?.name;
+        if (url) allMediaToDelete.push(url);
+      });
+    }
+
+    if (Array.isArray(product.videos) && product.videos.length > 0) {
+      product.videos.forEach((vid) => {
+        const url = typeof vid === "string" ? vid : vid?.url || vid?.name;
+        if (url) allMediaToDelete.push(url);
+      });
+    }
+
+    if (allMediaToDelete.length > 0) {
+      await deleteFileFromS3(allMediaToDelete);
     }
 
 
