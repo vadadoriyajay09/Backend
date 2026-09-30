@@ -1,27 +1,13 @@
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
-const emailUser = process.env.EMAIL;
-const emailPassword = process.env.EMAIL_PASSWORD;
+const resendApiKey = process.env.RESEND_API_KEY;
 
-if (!emailUser || !emailPassword) {
-  console.error("EMAIL or EMAIL_PASSWORD is missing");
+if (!resendApiKey) {
+  console.error("RESEND_API_KEY is missing from environment variables");
 }
 
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    auth: {
-      user: emailUser,
-      pass: emailPassword,
-    },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
-  });
-};
+const resend = new Resend(resendApiKey || "RESEND_API_KEY_MISSING");
 
-module.exports.transporterOTP = createTransporter();
-module.exports.transporterORDER = createTransporter();
+module.exports = { resend };
+
 
