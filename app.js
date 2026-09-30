@@ -12,6 +12,7 @@ const hpp = require("hpp");
 const errorMiddleware = require("./errors/error");
 
 const app = express();
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 
 // ==================== 🛡 SECURITY MIDDLEWARE ====================
@@ -85,6 +86,9 @@ app.get("/", (req, res) => {
 
 const routeIndex = require("./routes/index");
 app.use("/api/v1", routeIndex);
+
+// Stable media URLs for private Railway Bucket objects (302 to presigned URL)
+app.use("/media", require("./routes/mediaRoute"));
 
 // Handle undefined routes (404)
 app.all("*", (req, res) => {

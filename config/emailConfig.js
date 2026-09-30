@@ -1,17 +1,13 @@
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
-module.exports.transporterOTP = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: "noreply.nutrajun@gmail.com", 
-    pass: "ywqb ocdc baqf azji", 
-  },
-});
+const resendApiKey = process.env.RESEND_API_KEY;
 
-module.exports.transporterORDER = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: "noreply.nutrajun@gmail.com", 
-    pass: "ywqb ocdc baqf azji", 
-  },
-});
+if (!resendApiKey) {
+  console.error("RESEND_API_KEY is missing from environment variables");
+}
+
+const resend = new Resend(resendApiKey || "RESEND_API_KEY_MISSING");
+
+module.exports = { resend };
+
+

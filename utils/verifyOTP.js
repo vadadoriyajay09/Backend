@@ -32,7 +32,7 @@ const verifyOTP = async (email, otp, type) => {
   return true;
 };
 
-const sendOTP = async (email, type, next) => {
+const sendOTP = async (email, type) => {
   try {
     const otp = crypto.randomInt(100000, 999999).toString();
     await OTP.findOneAndUpdate(
@@ -45,7 +45,7 @@ const sendOTP = async (email, type, next) => {
     const message = otpTemplate(otp);
     await sendEmail.OTPEmail(email, subject, message);
   } catch (error) {
-    throw new Error(error);
+    throw error;
   }
 };
 
