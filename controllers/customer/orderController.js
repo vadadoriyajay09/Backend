@@ -92,11 +92,78 @@ module.exports.placeOrder = async (req, res, next) => {
         ]
       });
 
-      if (couponDetails && couponDetails.percentage) {
-        // Calculate coupon discount on the price after offers
-        const net_total = product_total - discount_amount;
-        coupon_discount_amount =
-          Number(((net_total * couponDetails.percentage) / 100).toFixed(2));
+      if (!couponDetails) {
+        return next(new ErrorHandler("Coupon is invalid or has expired", StatusCodes.BAD_REQUEST));
+      }
+
+      const totalItemsQty = populatedItems.reduce((acc, it) => acc + (Number(it.quantity) || 1), 0);
+      const net_total = Math.max(product_total - discount_amount, 0);
+
+      // Validate minimum cart amount
+      if (couponDetails.minimumCartAmount > 0 && net_total < couponDetails.minimumCartAmount) {
+        return next(
+          new ErrorHandler(
+            `Coupon ${couponDetails.code} requires a minimum order of ₹${couponDetails.minimumCartAmount}`,
+            StatusCodes.BAD_REQUEST
+          )
+        );
+      }
+
+      // Validate minimum cart quantity & calculate coupon discount
+      if (couponDetails.discountType === "buy_x_get_y") {
+        const buyX = couponDetails.buyQuantity || 2;
+        const getY = couponDetails.getFreeQuantity || 1;
+        const minBundle = Math.max(couponDetails.minimumCartQuantity || 0, buyX + getY);
+        if (totalItemsQty < minBundle) {
+          return next(
+            new ErrorHandler(
+              `Coupon ${couponDetails.code} (Buy ${buyX} Get ${getY} Free) requires at least ${minBundle} item(s) in your cart.`,
+              StatusCodes.BAD_REQUEST
+            )
+          );
+        }
+
+        // Expand individual unit prices (after dynamic product offer discounts)
+        const unitPrices = [];
+        for (const it of populatedItems) {
+          const qty = Number(it.quantity || 1);
+          const unitPrice = Math.max(Number(it.price.item_price - it.price.discount_amount) || 0, 0);
+          for (let q = 0; q < qty; q++) {
+            unitPrices.push(unitPrice);
+          }
+        }
+        unitPrices.sort((a, b) => a - b); // Cheapest first
+        const bundleSize = buyX + getY;
+        const sets = Math.floor(unitPrices.length / bundleSize);
+        const freeCount = sets * getY;
+        let sumFree = 0;
+        for (let i = 0; i < freeCount && i < unitPrices.length; i++) {
+          sumFree += unitPrices[i];
+        }
+        coupon_discount_amount = Number(sumFree.toFixed(2));
+      } else if (couponDetails.discountType === "amount") {
+        if (couponDetails.minimumCartQuantity > 0 && totalItemsQty < couponDetails.minimumCartQuantity) {
+          return next(
+            new ErrorHandler(
+              `Coupon ${couponDetails.code} requires at least ${couponDetails.minimumCartQuantity} item(s) in your cart.`,
+              StatusCodes.BAD_REQUEST
+            )
+          );
+        }
+        coupon_discount_amount = Math.min(Number(couponDetails.discountAmount || 0), net_total);
+      } else {
+        // Percentage discount
+        if (couponDetails.minimumCartQuantity > 0 && totalItemsQty < couponDetails.minimumCartQuantity) {
+          return next(
+            new ErrorHandler(
+              `Coupon ${couponDetails.code} requires at least ${couponDetails.minimumCartQuantity} item(s) in your cart.`,
+              StatusCodes.BAD_REQUEST
+            )
+          );
+        }
+        if (couponDetails.percentage) {
+          coupon_discount_amount = Number(((net_total * couponDetails.percentage) / 100).toFixed(2));
+        }
       }
     }
 
@@ -437,6 +504,7 @@ module.exports.validateCoupon = async (req, res, next) => {
   try {
     const { code } = req.body;
     const cartTotal = Number(req.body.cart_total ?? req.body.cartTotal ?? 0);
+    const cartQuantity = Number(req.body.cart_quantity ?? req.body.cartQuantity ?? 0);
 
     if (!code || typeof code !== "string" || code.trim().length === 0) {
       return next(new ErrorHandler("Coupon code is required", StatusCodes.BAD_REQUEST));
@@ -468,7 +536,25 @@ module.exports.validateCoupon = async (req, res, next) => {
       }
     }
 
-    if (coupon.minimumCartAmount > 0 && cartTotal < coupon.minimumCartAmount) {
+    // Minimum cart quantity validation
+    if (coupon.discountType === "buy_x_get_y") {
+      const buyX = coupon.buyQuantity || 2;
+      const getY = coupon.getFreeQuantity || 1;
+      const minRequired = Math.max(coupon.minimumCartQuantity || 0, buyX + getY);
+      if (cartQuantity > 0 && cartQuantity < minRequired) {
+        return res.status(StatusCodes.BAD_REQUEST).json({
+          success: false,
+          message: `Coupon "${coupon.code}" (Buy ${buyX} Get ${getY} Free) requires at least ${minRequired} item(s) in your cart. Add ${minRequired - cartQuantity} more item(s) to unlock.`,
+        });
+      }
+    } else if (coupon.minimumCartQuantity > 0 && cartQuantity > 0 && cartQuantity < coupon.minimumCartQuantity) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        success: false,
+        message: `This coupon requires a minimum of ${coupon.minimumCartQuantity} item(s) in your cart`,
+      });
+    }
+
+    if (coupon.minimumCartAmount > 0 && cartTotal > 0 && cartTotal < coupon.minimumCartAmount) {
       return res.status(StatusCodes.BAD_REQUEST).json({
         success: false,
         message: `This coupon requires a minimum order of ₹${coupon.minimumCartAmount}`,
@@ -483,6 +569,8 @@ module.exports.validateCoupon = async (req, res, next) => {
         discountType: coupon.discountType || "percentage",
         discountPercentage: coupon.percentage,
         discountAmount: coupon.discountAmount || 0,
+        buyQuantity: coupon.buyQuantity || 0,
+        getFreeQuantity: coupon.getFreeQuantity || 0,
         note: coupon.note,
         expiryDate: coupon.noExpiry ? null : coupon.expiryDate,
         noExpiry: coupon.noExpiry,
@@ -490,7 +578,8 @@ module.exports.validateCoupon = async (req, res, next) => {
         minimumCartAmount: coupon.minimumCartAmount || 0,
         _id: coupon._id
       },
-    });  } catch (error) {
+    });
+  } catch (error) {
     return next(new ErrorHandler(error.message || "Error validating coupon", StatusCodes.INTERNAL_SERVER_ERROR));
   }
 };
@@ -504,7 +593,7 @@ module.exports.getActiveCoupons = async (req, res, next) => {
       $or: [{ noExpiry: true }, { expiryDate: { $gte: now } }, { expiryDate: null }],
     })
       .sort({ minimumCartAmount: 1, minimumCartQuantity: 1 })
-      .select("code percentage discountType discountAmount note expiryDate noExpiry minimumCartQuantity minimumCartAmount");
+      .select("code percentage discountType discountAmount buyQuantity getFreeQuantity note expiryDate noExpiry minimumCartQuantity minimumCartAmount");
 
     return res.status(StatusCodes.OK).json({
       success: true,
@@ -514,6 +603,8 @@ module.exports.getActiveCoupons = async (req, res, next) => {
         discountType: coupon.discountType || "percentage",
         discountPercentage: coupon.percentage,
         discountAmount: coupon.discountAmount || 0,
+        buyQuantity: coupon.buyQuantity || 0,
+        getFreeQuantity: coupon.getFreeQuantity || 0,
         note: coupon.note,
         expiryDate: coupon.noExpiry ? null : coupon.expiryDate,
         noExpiry: coupon.noExpiry,

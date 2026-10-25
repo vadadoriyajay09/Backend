@@ -26,21 +26,46 @@ module.exports.createCoupon = async (req, res, next) => {
       ? Math.max(parseFloat(reqMinAmount) || 0, 0)
       : 0;
 
-    const discountType = req.body.discountType === "amount" ? "amount" : "percentage";
+    let discountType = "percentage";
+    if (req.body.discountType === "amount") {
+      discountType = "amount";
+    } else if (req.body.discountType === "buy_x_get_y") {
+      discountType = "buy_x_get_y";
+    }
+
     const discountAmount = discountType === "amount"
       ? Math.max(parseFloat(req.body.discountAmount) || 0, 0)
       : 0;
 
+    const percentageVal = discountType === "percentage"
+      ? Math.max(parseFloat(percentage) || 0, 0)
+      : 0;
+
+    const buyQuantity = discountType === "buy_x_get_y"
+      ? Math.max(parseInt(req.body.buyQuantity ?? req.body.buy_quantity ?? 2) || 2, 1)
+      : 0;
+
+    const getFreeQuantity = discountType === "buy_x_get_y"
+      ? Math.max(parseInt(req.body.getFreeQuantity ?? req.body.get_free_quantity ?? 1) || 1, 1)
+      : 0;
+
+    let finalMinQty = minimumCartQuantity;
+    if (discountType === "buy_x_get_y") {
+      finalMinQty = Math.max(finalMinQty, buyQuantity + getFreeQuantity);
+    }
+
     const newCoupon = new Coupon({
       code: code.toUpperCase(),
-      percentage: discountType === "amount" ? 0 : percentage,
+      percentage: percentageVal,
       discountType,
       discountAmount,
+      buyQuantity,
+      getFreeQuantity,
       status,
       note,
       expiryDate: noExpiry ? null : expiryDate,
       noExpiry: !!noExpiry,
-      minimumCartQuantity,
+      minimumCartQuantity: finalMinQty,
       minimumCartAmount,
     });
 
@@ -82,12 +107,27 @@ module.exports.updateCoupon = async (req, res, next) => {
     }
 
     if (updateData.discountType) {
-      updateData.discountType = updateData.discountType === "amount" ? "amount" : "percentage";
       if (updateData.discountType === "amount") {
+        updateData.discountType = "amount";
         updateData.discountAmount = Math.max(parseFloat(updateData.discountAmount) || 0, 0);
         updateData.percentage = 0;
-      } else {
+        updateData.buyQuantity = 0;
+        updateData.getFreeQuantity = 0;
+      } else if (updateData.discountType === "buy_x_get_y") {
+        updateData.discountType = "buy_x_get_y";
         updateData.discountAmount = 0;
+        updateData.percentage = 0;
+        updateData.buyQuantity = Math.max(parseInt(updateData.buyQuantity ?? updateData.buy_quantity ?? 2) || 2, 1);
+        updateData.getFreeQuantity = Math.max(parseInt(updateData.getFreeQuantity ?? updateData.get_free_quantity ?? 1) || 1, 1);
+        const minBundle = updateData.buyQuantity + updateData.getFreeQuantity;
+        if (!updateData.minimumCartQuantity || updateData.minimumCartQuantity < minBundle) {
+          updateData.minimumCartQuantity = minBundle;
+        }
+      } else {
+        updateData.discountType = "percentage";
+        updateData.discountAmount = 0;
+        updateData.buyQuantity = 0;
+        updateData.getFreeQuantity = 0;
       }
     }
 
