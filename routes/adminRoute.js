@@ -16,6 +16,7 @@ const adminContactUsController = require("../controllers/admin/contactController
 const adminAffiliateController = require("../controllers/admin/affiliateController");
 const galleryController = require("../controllers/admin/galleryController");
 const adminOfferController = require("../controllers/admin/offerController");
+const adminBannerController = require("../controllers/admin/bannerController");
 
 const { protectRoute, allowAccess } = require("../middleware/auth");
 const { uploadFile } = require("../middleware/multer-s3-upload");
@@ -32,6 +33,7 @@ const uploadCategoryBanner = uploadFile("category-banner").single("image");
 const uploadOrderPhoto = uploadFile("order-photo").single("image");
 const uploadBlogPhotos = uploadFile("blog-photo").any();
 const uploadOfferBanner = uploadFile("offer-banner").single("banner_image");
+const uploadBannerImage = uploadFile("banners").single("image");
 
 const uploadGalleryFiles = uploadFile("gallery").fields([
   { name: "image", maxCount: 1 },
@@ -105,6 +107,14 @@ router.get("/admin/offer/one/:offerId", protectRoute, allowAccess(["admin"]), ad
 router.put("/admin/offer/edit/:offerId", protectRoute, allowAccess(["admin"]), uploadOfferBanner, adminOfferController.editOffer);
 router.delete("/admin/offer/delete-image/:offerId", protectRoute, allowAccess(["admin"]), adminOfferController.deleteOfferBannerImage);
 router.delete("/admin/offer/delete/:offerId", protectRoute, allowAccess(["admin"]), adminOfferController.deleteOffer);
+
+// Banner
+router.post("/admin/banner/create", protectRoute, allowAccess(["admin"]), uploadBannerImage, adminBannerController.createBanner);
+router.get("/admin/banner/all", protectRoute, allowAccess(["admin"]), adminBannerController.getAllBanners);
+router.get("/admin/banner/one/:id", protectRoute, allowAccess(["admin"]), adminBannerController.getBannerById);
+router.put("/admin/banner/edit/:id", protectRoute, allowAccess(["admin"]), uploadBannerImage, adminBannerController.updateBanner);
+router.put("/admin/banner/toggle-status/:id", protectRoute, allowAccess(["admin"]), adminBannerController.toggleBannerStatus);
+router.delete("/admin/banner/delete/:id", protectRoute, allowAccess(["admin"]), adminBannerController.deleteBanner);
 
 // contact Us
 router.get("/admin/contact/all", protectRoute, allowAccess(["admin"]), adminContactUsController.getAllContacts);

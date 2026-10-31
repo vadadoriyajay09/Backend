@@ -11,10 +11,14 @@ const orderController = require("../controllers/customer/orderController");
 const paymentController = require("../controllers/paymentController");
 const wishlistController = require("../controllers/customer/wishlistController");
 const offerCustomerController = require("../controllers/customer/offerCustomerController");
+const bannerCustomerController = require("../controllers/customer/bannerCustomerController");
 const Order = require("../models/orderModel");
 const { createContact } = require("../controllers/admin/contactController");
 const { createAffiliate } = require("../controllers/admin/affiliateController");
 const { getAllGalleryMainWeb } = require("../controllers/admin/galleryController");
+const { uploadFile } = require("../middleware/multer-s3-upload");
+
+const uploadReviewPhoto = uploadFile("reviews").single("image");
 
 
 // Register OTP routes
@@ -23,6 +27,8 @@ router.post("/customer/auth/register/verify-otp", customerAuthController.verifyR
 
 router.post("/customer/auth/login/send-otp", customerAuthController.sendLoginOTP);
 router.post("/customer/auth/login/verify-otp", customerAuthController.verifyLoginOTP);
+
+router.post("/customer/auth/google", customerAuthController.googleAuth);
 
 router.post("/customer/auth/check-customer", customerAuthController.checkCustomerByEmail);
 
@@ -40,12 +46,15 @@ router.get("/customer/product/one/:id", customerProductController.getSingleProdu
 router.get("/customer/offer/home", offerCustomerController.getHomeOffers);
 router.get("/customer/offer/product/:productId", offerCustomerController.getOfferForProduct);
 
+//Banner
+router.get("/customer/banner/all", bannerCustomerController.getActiveBanners);
+
 //Category
 router.get("/customer/category/all", customerCategoryController.getAllCategories)
 router.get("/customer/category/one/:categoryId", customerCategoryController.getCategoryById)
 
 //Review
-router.post("/customer/review/add/:productId", protectRoute, allowAccess(["customer"]), customerProductController.addReviewCustomer)
+router.post("/customer/review/add/:productId", protectRoute, allowAccess(["customer"]), uploadReviewPhoto, customerProductController.addReviewCustomer)
 
 //Cart
 router.post("/customer/cart/add", protectRoute, allowAccess(["customer"]), cartController.addToCart)

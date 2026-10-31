@@ -2,10 +2,12 @@ const jwt = require('jsonwebtoken');
 
 module.exports.generateToken = (user) => {
   const payload = {
-    full_name: user.full_name || null,
+    full_name: user.full_name || user.name || null,
+    name: user.name || user.full_name || null,
     email: user.email,
-    mobile_number:user.mobile_number || null,
-    status : user.status ,
+    profile_photo: user.profile_photo || null,
+    mobile_number: user.mobile_number || null,
+    status: user.status,
     role: user.role,
     _id: user._id
   };

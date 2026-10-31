@@ -56,14 +56,18 @@ module.exports.sendRegisterOTP = async (req, res, next) => {
 // Verify Registration OTP
 module.exports.verifyRegisterOTP = async (req, res, next) => {
   try {
-    const { email, otp } = req.body;
+    const { email, otp, name, profile_photo } = req.body;
     if (!email || !otp)
       return next(
         new ErrorHandler("All fields are required", StatusCodes.BAD_REQUEST)
       );
 
     await verifyOTP(email, otp, "register");
-    const newUser = new Coustomer({ email });
+    const newUser = new Coustomer({
+      email,
+      name: name || "",
+      profile_photo: profile_photo || "",
+    });
     await newUser.save();
 
     const token = generateToken(newUser);
@@ -71,7 +75,14 @@ module.exports.verifyRegisterOTP = async (req, res, next) => {
     res.status(StatusCodes.CREATED).json({
       success: true,
       message: "User registered successfully",
-      data: newUser,
+      data: {
+        id: newUser._id,
+        _id: newUser._id,
+        email: newUser.email,
+        name: newUser.name,
+        profile_photo: newUser.profile_photo || "",
+        mobile_number: newUser.mobile_number,
+      },
       token,
     });
   } catch (error) {
@@ -124,10 +135,72 @@ module.exports.verifyLoginOTP = async (req, res, next) => {
       success: true,
       message: "Login successful",
       data: {
+        id: user._id,
+        _id: user._id,
         email: user.email,
         name: user.name,
+        profile_photo: user.profile_photo || "",
         mobile_number: user.mobile_number,
-        id: user._id,
+      },
+      token,
+    });
+  } catch (error) {
+    return next(
+      new ErrorHandler(error.message, StatusCodes.INTERNAL_SERVER_ERROR)
+    );
+  }
+};
+
+// Google Auth (Sign in / Sign up with Google)
+module.exports.googleAuth = async (req, res, next) => {
+  try {
+    const { email, name, picture } = req.body;
+    if (!email) {
+      return next(
+        new ErrorHandler("Email is required", StatusCodes.BAD_REQUEST)
+      );
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    let customer = await Coustomer.findOne({ email: normalizedEmail });
+
+    if (!customer) {
+      // New user signup via Google
+      customer = new Coustomer({
+        email: normalizedEmail,
+        name: name || "",
+        profile_photo: picture || "",
+      });
+      await customer.save();
+    } else {
+      // Existing user: update profile_photo and name if available
+      let isUpdated = false;
+      if (picture && customer.profile_photo !== picture) {
+        customer.profile_photo = picture;
+        isUpdated = true;
+      }
+      if (name && !customer.name) {
+        customer.name = name;
+        isUpdated = true;
+      }
+      if (isUpdated) {
+        await customer.save();
+      }
+    }
+
+    const token = generateToken(customer);
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      message: "Logged in successfully with Google",
+      data: {
+        id: customer._id,
+        _id: customer._id,
+        email: customer.email,
+        name: customer.name,
+        profile_photo: customer.profile_photo || "",
+        mobile_number: customer.mobile_number || "",
       },
       token,
     });

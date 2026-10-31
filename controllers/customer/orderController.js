@@ -6,7 +6,15 @@ const crypto = require("crypto");
 const Product = require("../../models/productModel");
 const { sendPlacedOrderMail, sendPaymentStatusMail } = require("../emailController");
 const Coupon = require("../../models/couponModel");
+const Cart = require("../../models/cartModel");
 const { getActiveDiscountedPrice } = require("../../utils/offerHelper");
+
+const isComboProduct = (item) => {
+  if (!item) return false;
+  const name = item.name || item.title || item.product?.name || item.product?.title || "";
+  const sku = item.sku || item.product?.sku || "";
+  return /combo/i.test(name) || /combo/i.test(sku);
+};
 
 module.exports.placeOrder = async (req, res, next) => {
   try {
@@ -114,18 +122,23 @@ module.exports.placeOrder = async (req, res, next) => {
         const buyX = couponDetails.buyQuantity || 2;
         const getY = couponDetails.getFreeQuantity || 1;
         const minBundle = Math.max(couponDetails.minimumCartQuantity || 0, buyX + getY);
-        if (totalItemsQty < minBundle) {
+
+        // Filter to single products only (combos excluded)
+        const eligibleItems = populatedItems.filter((it) => !isComboProduct(it));
+        const eligibleSingleQty = eligibleItems.reduce((acc, it) => acc + (Number(it.quantity) || 1), 0);
+
+        if (eligibleSingleQty < minBundle) {
           return next(
             new ErrorHandler(
-              `Coupon ${couponDetails.code} (Buy ${buyX} Get ${getY} Free) requires at least ${minBundle} item(s) in your cart.`,
+              `Coupon ${couponDetails.code} (Buy ${buyX} Get ${getY} Free) is applicable only on single products and requires at least ${minBundle} single product item(s) in your cart.`,
               StatusCodes.BAD_REQUEST
             )
           );
         }
 
-        // Expand individual unit prices (after dynamic product offer discounts)
+        // Expand individual unit prices for ELIGIBLE SINGLE PRODUCTS ONLY
         const unitPrices = [];
-        for (const it of populatedItems) {
+        for (const it of eligibleItems) {
           const qty = Number(it.quantity || 1);
           const unitPrice = Math.max(Number(it.price.item_price - it.price.discount_amount) || 0, 0);
           for (let q = 0; q < qty; q++) {
@@ -541,10 +554,28 @@ module.exports.validateCoupon = async (req, res, next) => {
       const buyX = coupon.buyQuantity || 2;
       const getY = coupon.getFreeQuantity || 1;
       const minRequired = Math.max(coupon.minimumCartQuantity || 0, buyX + getY);
-      if (cartQuantity > 0 && cartQuantity < minRequired) {
+
+      let singleQuantity = Number(req.body.single_quantity ?? req.body.singleQuantity ?? -1);
+
+      if (singleQuantity < 0 && req.id) {
+        try {
+          const userCart = await Cart.findOne({ customer_id: req.id }).populate("items.product", "name title sku");
+          if (userCart && Array.isArray(userCart.items)) {
+            singleQuantity = userCart.items
+              .filter((it) => it.product && !isComboProduct(it.product))
+              .reduce((sum, it) => sum + (Number(it.quantity) || 1), 0);
+          }
+        } catch (err) {
+          // ignore error and fallback
+        }
+      }
+
+      const effectiveQty = singleQuantity >= 0 ? singleQuantity : cartQuantity;
+
+      if (effectiveQty > 0 && effectiveQty < minRequired) {
         return res.status(StatusCodes.BAD_REQUEST).json({
           success: false,
-          message: `Coupon "${coupon.code}" (Buy ${buyX} Get ${getY} Free) requires at least ${minRequired} item(s) in your cart. Add ${minRequired - cartQuantity} more item(s) to unlock.`,
+          message: `Coupon "${coupon.code}" (Buy ${buyX} Get ${getY} Free) is valid only on single products and requires at least ${minRequired} single product item(s). Add ${minRequired - effectiveQty} more single product(s) to unlock.`,
         });
       }
     } else if (coupon.minimumCartQuantity > 0 && cartQuantity > 0 && cartQuantity < coupon.minimumCartQuantity) {

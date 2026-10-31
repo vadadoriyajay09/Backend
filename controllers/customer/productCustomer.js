@@ -235,12 +235,48 @@ module.exports.getAllProductsCustomer = async (req, res, next) => {
 module.exports.addReviewCustomer = async (req, res, next) => {
   try {
     const { productId } = req.params;
-    const { rating, comment, image, user_detail } = req.body;
+    const rating = Number(req.body.rating);
+    const comment = req.body.comment?.trim?.() || "";
+    const title = req.body.title?.trim?.() || "";
 
-    if (!rating || !comment || !user_detail) {
+    // Parse user_detail (may be string if sent via FormData)
+    let user_detail = req.body.user_detail;
+    if (typeof user_detail === "string") {
+      try {
+        user_detail = JSON.parse(user_detail);
+      } catch (e) {
+        user_detail = { name: user_detail };
+      }
+    }
+
+    if (!user_detail || !user_detail.name) {
+      user_detail = {
+        name: req.body.name || req.user?.name || "Customer",
+        email: req.body.email || req.user?.email || "",
+        mobile_number: req.body.mobile_number || req.body.phone || "",
+        country: req.body.country || "India",
+      };
+    }
+
+    // Attach profile_photo if available
+    let customerPhoto = user_detail.profile_photo || req.user?.profile_photo || "";
+    const customerId = req.user?._id || req.body.customer_id;
+    if (!customerPhoto && customerId) {
+      try {
+        const foundCustomer = await Customer.findById(customerId).select("profile_photo name");
+        if (foundCustomer?.profile_photo) {
+          customerPhoto = foundCustomer.profile_photo;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    user_detail.profile_photo = customerPhoto;
+
+    if (!rating || !comment || !user_detail?.name) {
       return next(
         new ErrorHandler(
-          "Name and Rating and Comment are required",
+          "Name, Rating and Comment are required",
           StatusCodes.BAD_REQUEST
         )
       );
@@ -260,33 +296,50 @@ module.exports.addReviewCustomer = async (req, res, next) => {
       return next(new ErrorHandler("Product not found", StatusCodes.NOT_FOUND));
     }
 
-    const alreadyReviewed = product.reviews.find(
-      (rev) =>
-        rev.user_detail.name?.toString() === user_detail.name?.toString()
-    );
-    if (alreadyReviewed) {
-      return next(
-        new ErrorHandler(
-          "You already reviewed this product",
-          StatusCodes.BAD_REQUEST
-        )
-      );
-    }
+    // Capture uploaded image from multer (req.file.location) or body
+    const reviewImage = req.file?.location || req.body.image || null;
 
-    const newReview = {
+    // Check if user already reviewed
+    const existingIndex = product.reviews.findIndex((rev) => {
+      const existingName = rev.user_detail?.name?.toString()?.toLowerCase();
+      const currentName = user_detail?.name?.toString()?.toLowerCase();
+      const existingEmail = rev.user_detail?.email?.toString()?.toLowerCase();
+      const currentEmail = user_detail?.email?.toString()?.toLowerCase();
+
+      return (
+        (existingEmail && currentEmail && existingEmail === currentEmail) ||
+        (existingName && currentName && existingName === currentName)
+      );
+    });
+
+    const reviewObj = {
       rating,
+      title,
       comment,
       user_detail,
-      image: null,
+      image: reviewImage,
       visible: 1,
+      created_at: new Date(),
     };
 
-    product.reviews.push(newReview);
+    if (existingIndex >= 0) {
+      if (!reviewImage && product.reviews[existingIndex].image) {
+        reviewObj.image = product.reviews[existingIndex].image;
+      }
+      product.reviews[existingIndex] = {
+        ...(product.reviews[existingIndex].toObject?.() || product.reviews[existingIndex]),
+        ...reviewObj,
+      };
+    } else {
+      product.reviews.push(reviewObj);
+    }
+
     await product.save();
 
     res.status(StatusCodes.OK).json({
       success: true,
-      message: "Review added successfully",
+      message: existingIndex >= 0 ? "Review updated successfully" : "Review added successfully",
+      data: reviewObj,
     });
   } catch (error) {
     return next(
