@@ -5,7 +5,7 @@ const orderSchema = new mongoose.Schema(
     customer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Customer",
-      required: true,
+      required: false,
     },
     customer_details: {
       name: {
@@ -35,7 +35,7 @@ const orderSchema = new mongoose.Schema(
         product: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "Product",
-          required: true,
+          required: false,
         },
         sku: {
           type: String,
@@ -98,7 +98,7 @@ const orderSchema = new mongoose.Schema(
       },
       payment_method: {
         type: String,
-        enum: ["COD", "Online", "Pending"],
+        enum: ["COD", "Online", "Pending", "Cash", "UPI", "Card"],
         default: "Pending",
       },
       payment_status: {

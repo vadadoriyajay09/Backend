@@ -1,6 +1,22 @@
 const { resend } = require("../config/emailConfig");
 
 /**
+ * Helper to get a valid sender address for Resend.
+ * Resend does not allow sending from public domains like @gmail.com or @yahoo.com.
+ * If an unverified domain is detected, it falls back to onboarding@resend.dev for testing.
+ */
+const getValidSender = () => {
+  const configuredSender = process.env.EMAIL_FROM || process.env.EMAIL;
+  if (!configuredSender || /@(gmail\.com|yahoo\.com|outlook\.com|hotmail\.com)/i.test(configuredSender)) {
+    console.warn(
+      `[Resend Warning] "${configuredSender}" cannot be used as sender on Resend. Resend requires a verified custom domain (e.g. orders@nutrajun.com) or "onboarding@resend.dev" for testing. Using "Nutrajun <onboarding@resend.dev>".`
+    );
+    return "Nutrajun <onboarding@resend.dev>";
+  }
+  return configuredSender;
+};
+
+/**
  * Function to send an OTP email via Resend HTTPS API
  * @param {string} email - Recipient's email
  * @param {string} subject - Email subject
@@ -8,8 +24,8 @@ const { resend } = require("../config/emailConfig");
  */
 //otp mail
 module.exports.OTPEmail = async (email, subject, message) => {
-  const fromEmail = process.env.EMAIL_FROM || process.env.EMAIL;
-  console.log("Starting OTP email send via Resend");
+  const fromEmail = getValidSender();
+  console.log("Starting OTP email send via Resend from:", fromEmail);
   try {
     const { data, error } = await resend.emails.send({
       from: fromEmail,
@@ -39,8 +55,8 @@ module.exports.OTPEmail = async (email, subject, message) => {
 };
 
 module.exports.ORDEREmail = async (email, subject, message) => {
-  const fromEmail = process.env.EMAIL_FROM || process.env.EMAIL;
-  console.log("Starting ORDER email send via Resend");
+  const fromEmail = getValidSender();
+  console.log("Starting ORDER email send via Resend from:", fromEmail);
   try {
     const { data, error } = await resend.emails.send({
       from: fromEmail,

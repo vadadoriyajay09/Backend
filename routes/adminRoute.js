@@ -67,6 +67,7 @@ router.delete("/admin/category/delete/:categoryId", protectRoute, allowAccess(["
 //Order
 router.get("/admin/order/all", protectRoute, allowAccess(["admin"]), adminOrderController.getAllOrders);
 router.get("/admin/order/one/:_id", protectRoute, allowAccess(["admin"]), adminOrderController.getOrderById);
+router.post("/admin/order/create-bill", protectRoute, allowAccess(["admin"]), adminOrderController.createAdminBill);
 router.patch("/admin/order/update_status/:_id", protectRoute, allowAccess(["admin"]), adminOrderController.updateOrderStatus);
 router.patch("/admin/order/update_shipment/:_id", protectRoute, allowAccess(["admin"]), adminOrderController.updateShipment);
 router.post("/admin/order/download-excel", protectRoute, allowAccess(["admin"]), adminOrderController.downloadOrderExcel);

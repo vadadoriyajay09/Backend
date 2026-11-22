@@ -354,7 +354,7 @@ module.exports.downloadOrderExcel = async (req, res, next) => {
         worksheet.addRow({
           _id: order._id.toString(),
           orderID: order.orderID,
-          customer: order.customer.toString(),
+          customer: order.customer ? order.customer.toString() : "Walk-in Customer",
           date: order.createdAt.toISOString().split("T")[0],
           shippingAddress: `${order.shipping_address.address_line_1}, ${order.shipping_address.address_line_2}, ${order.shipping_address.city}, ${order.shipping_address.state}, ${order.shipping_address.pincode}`,
           product: item.product?.name || "Unknown",
@@ -382,6 +382,130 @@ module.exports.downloadOrderExcel = async (req, res, next) => {
 
     await workbook.xlsx.write(res);
     res.end();
+  } catch (error) {
+    return next(
+      new ErrorHandler(
+        error.message,
+        error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR
+      )
+    );
+  }
+};
+
+module.exports.createAdminBill = async (req, res, next) => {
+  try {
+    const {
+      customer_details,
+      items,
+      shipping_address,
+      payment,
+      notes,
+    } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return next(
+        new ErrorHandler("At least one item is required", StatusCodes.BAD_REQUEST)
+      );
+    }
+
+    const orderID = "BILL-" + Date.now().toString().slice(-8);
+
+    let customerId = null;
+    const phone = customer_details?.phone ? String(customer_details.phone).trim() : "";
+    const email = customer_details?.email ? String(customer_details.email).trim().toLowerCase() : "";
+    const name = customer_details?.name ? String(customer_details.name).trim() : "Walk-in Customer";
+
+    if (phone || email) {
+      try {
+        const Customer = require("../../models/customerModel");
+        const query = [];
+        if (email) query.push({ email });
+        if (phone && /^[6-9]\d{9}$/.test(phone)) query.push({ mobile_number: phone });
+
+        if (query.length > 0) {
+          let existingCustomer = await Customer.findOne({ $or: query });
+          if (!existingCustomer) {
+            const guestEmail = email || `customer_${Date.now()}@nutrajun.com`;
+            existingCustomer = await Customer.create({
+              name,
+              email: guestEmail,
+              mobile_number: (/^[6-9]\d{9}$/.test(phone)) ? phone : undefined,
+            });
+          }
+          if (existingCustomer) {
+            customerId = existingCustomer._id;
+          }
+        }
+      } catch (custErr) {
+        console.warn("Could not find/create customer for bill:", custErr.message);
+      }
+    }
+
+    const populatedItems = items.map((it) => {
+      const itemPrice = Number(it.price || it.item_price || 0);
+      const qty = Number(it.quantity || 1);
+      const totalPrice = Number(it.total_price || (itemPrice * qty) || 0);
+
+      return {
+        product: it.product || it.productId || undefined,
+        sku: it.sku || "",
+        name: it.name || "Item",
+        image_url: it.image_url || it.image || "",
+        size: {
+          package_weight: it.size?.package_weight || it.weight || "",
+          number_of_piecces: it.size?.number_of_piecces || "",
+        },
+        price: {
+          item_price: itemPrice,
+          total_price: totalPrice,
+        },
+        quantity: qty,
+      };
+    });
+
+    const productTotal = Number(payment?.product_total || 0);
+    const discountAmount = Number(payment?.discount_amount || 0);
+    const shippingCharge = Number(payment?.shipping_charge || 0);
+    const totalAmount = Number(payment?.total_amount || Math.max(0, productTotal - discountAmount + shippingCharge));
+
+    const newOrder = await Order.create({
+      customer: customerId || undefined,
+      customer_details: {
+        name,
+        email: email || "walkin@nutrajun.com",
+        phone: phone || "N/A",
+      },
+      items: populatedItems,
+      shipping_address: shipping_address || {
+        address_line_1: "In-Store / Direct Sale",
+        city: "Surat",
+        state: "Gujarat",
+        country: "India",
+        pincode: "395006",
+      },
+      notes: notes || "Offline / Direct Store Bill",
+      orderID,
+      payment: {
+        product_total: productTotal,
+        shipping_charge: shippingCharge,
+        discount_amount: discountAmount,
+        coupon_discount_amount: Number(payment?.coupon_discount_amount || 0),
+        total_amount: totalAmount,
+        payment_method: payment?.payment_method || "Cash",
+        payment_status: payment?.payment_status || "Paid",
+      },
+      order_status: "delivered",
+      shipment: {
+        shipment_status: "delivered",
+        is_shipment_confirmed: 1,
+      },
+    });
+
+    res.status(StatusCodes.CREATED).json({
+      success: true,
+      message: "Bill created successfully",
+      data: newOrder,
+    });
   } catch (error) {
     return next(
       new ErrorHandler(

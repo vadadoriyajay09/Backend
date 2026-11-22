@@ -41,10 +41,20 @@ const sendOTP = async (email, type) => {
       { upsert: true }
     );
 
+    console.log(`\n========================================`);
+    console.log(`🔑 [OTP GENERATED] Type: ${type} | Email: ${email}`);
+    console.log(`👉 OTP CODE: ${otp}`);
+    console.log(`========================================\n`);
+
     const subject = "Your OTP Code";
     const message = otpTemplate(otp);
     await sendEmail.OTPEmail(email, subject, message);
   } catch (error) {
+    // In development mode, if email fails, do not block admin login!
+    if (type === "admin" && process.env.NODE_ENV !== "production") {
+      console.warn("⚠️ Email sending failed, but OTP is saved in database and printed in terminal for local development.");
+      return;
+    }
     throw error;
   }
 };
